@@ -4,14 +4,16 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.runtime.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -21,77 +23,124 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import com.example.musicapp.ui.theme.MusicAppTheme
 import kotlinx.coroutines.delay
 import java.util.Locale
-import androidx.media3.common.PlaybackException as ExoPlaybackException
+import android.content.Context
+
+class MusicPlayerController(private val context: Context) {
+    private val player: ExoPlayer = ExoPlayer.Builder(context).build()
+
+    fun setMediaItem(uri: String) {
+        val mediaItem = MediaItem.fromUri(uri)
+        player.setMediaItem(mediaItem)
+        player.repeatMode = Player.REPEAT_MODE_OFF
+    }
+
+    fun prepare() {
+        player.prepare()
+    }
+
+    fun seekTo(position: Long) {
+        player.seekTo(position)
+    }
+
+    fun play() {
+        player.play()
+    }
+
+    fun pause() {
+        player.pause()
+    }
+
+    fun release() {
+        player.release()
+    }
+
+    fun getCurrentPosition(): Long {
+        return player.currentPosition
+    }
+
+    fun getDuration(): Long {
+        return player.duration
+    }
+
+    fun isPlaying(): Boolean {
+        return player.isPlaying
+    }
+}
 
 class MusicPlayerActivity : ComponentActivity() {
-
-    private lateinit var player: ExoPlayer
+    private lateinit var musicPlayerController: MusicPlayerController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        musicPlayerController = MusicPlayerController(context = this)
+
         try {
-            // Initialize the player
-            player = ExoPlayer.Builder(this).build().apply {
-                addListener(object : Player.Listener {
-                    override fun onPlayerError(error: ExoPlaybackException) {
-                        Log.e("MusicPlayerActivity", "Player error: ${error.message}")
-                    }
-                })
-            }
+            musicPlayerController.setMediaItem("https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
+            musicPlayerController.prepare()
+            musicPlayerController.play()
+        } catch (e: Exception) {
+            Log.e("MusicPlayerActivity", "Error setting up media: ${e.message}", e)
+        }
 
-            // Create a media item
-            val mediaItem = MediaItem.fromUri("https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
-            player.setMediaItem(mediaItem)
-            player.prepare()
-            player.play()
+        setContent {
+            MusicAppTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    var isPlaying by remember { mutableStateOf(false) }
+                    var currentPosition by remember { mutableStateOf(0L) }
+                    var duration by remember { mutableStateOf(0L) }
 
-            setContent {
-                MusicAppTheme {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        MusicPlayerUI(
-                            player = player,
-                            isPlaying = player.isPlaying,
-                            onPlayPauseClick = {
-                                if (player.isPlaying) {
-                                    player.pause()
-                                } else {
-                                    player.play()
-                                }
-                            }
-                        )
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            isPlaying = musicPlayerController.isPlaying()
+                            currentPosition = musicPlayerController.getCurrentPosition()
+                            duration = musicPlayerController.getDuration()
+                            delay(100) // Update every 100ms
+                        }
                     }
+
+                    MusicPlayerUI(
+                        isPlaying = isPlaying,
+                        currentPosition = currentPosition,
+                        duration = duration,
+                        onPlayPauseClick = {
+                            if (isPlaying) musicPlayerController.pause() else musicPlayerController.play()
+                        },
+                        onSeek = { newPosition ->
+                            musicPlayerController.seekTo(newPosition)
+                        }
+                    )
                 }
             }
-        } catch (e: Exception) {
-            Log.e("MusicPlayerActivity", "Initialization error: ${e.message}")
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        player.release()
+        musicPlayerController.release()
     }
 }
 
 @Composable
 fun MusicPlayerUI(
-    player: ExoPlayer? = null,
     isPlaying: Boolean,
-    onPlayPauseClick: () -> Unit
+    currentPosition: Long,
+    duration: Long,
+    onPlayPauseClick: () -> Unit,
+    onSeek: (Long) -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFFFFEE0)),
+            .background(Color(0xE6000000)),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -99,18 +148,18 @@ fun MusicPlayerUI(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Spacer(modifier = Modifier.height(60.dp))
+            Spacer(modifier = Modifier.height(100.dp))
             Image(
-                painter = painterResource(id = R.drawable.img_1), // Replace with your music logo resource
+                painter = painterResource(id = R.drawable.img_8),
                 contentDescription = null,
                 modifier = Modifier
-                    .size(250.dp)
-                    .padding(16.dp)
+                    .size(400.dp)
+                    .padding(24.dp)
             )
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(5.dp))
             Text(
                 text = "Sample Track",
-                color = Color.Black,
+                color = Color.White,
                 fontSize = 24.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(16.dp)
@@ -122,11 +171,11 @@ fun MusicPlayerUI(
                     .padding(horizontal = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (player != null) {
-                    SeekBar(player = player)
-                } else {
-                    MockSeekBar()
-                }
+                SeekBar(
+                    currentPosition = currentPosition,
+                    duration = duration,
+                    onSeek = onSeek
+                )
                 Spacer(modifier = Modifier.height(16.dp))
                 PlayPauseButton(isPlaying, onPlayPauseClick)
             }
@@ -137,36 +186,30 @@ fun MusicPlayerUI(
 
 @Composable
 fun PlayPauseButton(isPlaying: Boolean, onPlayPauseClick: () -> Unit) {
-    FloatingActionButton(
-        onClick = onPlayPauseClick,
-        containerColor = Color.Black,
-        contentColor = Color.White,
-        modifier = Modifier
-            .size(75.dp)
-            .padding(16.dp)
-    ) {
-        if (isPlaying) {
-            Icon(Icons.Filled.Pause, contentDescription = "Pause")
-        } else {
-            Icon(Icons.Filled.PlayArrow, contentDescription = "Play")
+    Crossfade(targetState = isPlaying, animationSpec = tween(durationMillis = 300)) { playing ->
+        FloatingActionButton(
+            onClick = onPlayPauseClick,
+            containerColor = Color.Red,
+            contentColor = Color.Black,
+            modifier = Modifier
+                .size(75.dp)
+                .padding(16.dp)
+        ) {
+            if (playing) {
+                Icon(Icons.Filled.Pause, contentDescription = "Pause")
+            } else {
+                Icon(Icons.Filled.PlayArrow, contentDescription = "Play")
+            }
         }
     }
 }
 
 @Composable
-fun SeekBar(player: ExoPlayer) {
-    var duration by remember { mutableFloatStateOf(player.duration.toFloat()) }
-    var currentPosition by remember { mutableFloatStateOf(player.currentPosition.toFloat()) }
-
-    LaunchedEffect(player) {
-        while (true) {
-            duration = player.duration.toFloat()
-            currentPosition = player.currentPosition.toFloat()
-            delay(1000) // Update every second
-        }
-    }
-
-    if (duration > 0)
+fun SeekBar(
+    currentPosition: Long,
+    duration: Long,
+    onSeek: (Long) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -175,61 +218,29 @@ fun SeekBar(player: ExoPlayer) {
     ) {
         Text(
             text = buildString {
-                append(formatTime(currentPosition.toLong()))
+                append(formatTime(currentPosition))
                 append(" / ")
-                append(formatTime(duration.toLong()))
+                append(formatTime(duration.coerceAtLeast(1)))
             },
-            color = Color.Black,
-            fontSize = 16.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        println("currentPosition: $currentPosition")
-        Slider(
-            value = currentPosition,
-            onValueChange = { newValue ->
-                player.seekTo(newValue.toLong())
-                currentPosition = newValue.coerceIn(0f, duration)
-            },
-            valueRange = 0f..duration,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-        )
-    }
-}
-
-@Composable
-fun MockSeekBar() {
-    val duration by remember { mutableFloatStateOf(300000f) } // Mock duration of 5 minutes
-    var currentPosition by remember { mutableFloatStateOf(150000f) } // Mock current position of 2.5 minutes
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = buildString {
-                append(formatTime(currentPosition.toLong()))
-                append(" / ")
-                append(formatTime(duration.toLong()))
-            },
-            color = Color.Black,
+            color = Color.White,
             fontSize = 16.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 8.dp)
         )
         Slider(
-            value = currentPosition,
+            value = currentPosition.toFloat(),
             onValueChange = { newValue ->
-                currentPosition = newValue
+                onSeek(newValue.toLong())
             },
-            valueRange = 0f..duration,
+            valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
+            colors = SliderDefaults.colors(
+                thumbColor = Color.Red,
+                activeTrackColor = Color.Red,
+                inactiveTrackColor = Color.Gray
+            ),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 0.dp)
         )
     }
 }
@@ -247,7 +258,10 @@ fun PreviewMusicPlayerUI() {
     MusicAppTheme {
         MusicPlayerUI(
             isPlaying = false,
-            onPlayPauseClick = { /* No-op for preview */ }
+            currentPosition = 60000L,
+            duration = 180000L,
+            onPlayPauseClick = { },
+            onSeek = { }
         )
     }
 }
