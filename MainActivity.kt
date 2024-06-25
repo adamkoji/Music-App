@@ -8,7 +8,10 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -25,6 +28,11 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.musicapp.ui.theme.MusicAppTheme
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -72,21 +80,9 @@ class MusicPlayerController(private val context: Context) {
     }
 }
 
-class MusicPlayerActivity : ComponentActivity() {
-    private lateinit var musicPlayerController: MusicPlayerController
-
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        musicPlayerController = MusicPlayerController(context = this)
-
-        try {
-            musicPlayerController.setMediaItem("https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
-            musicPlayerController.prepare()
-            musicPlayerController.play()
-        } catch (e: Exception) {
-            Log.e("MusicPlayerActivity", "Error setting up media: ${e.message}", e)
-        }
 
         setContent {
             MusicAppTheme {
@@ -94,43 +90,164 @@ class MusicPlayerActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    var isPlaying by remember { mutableStateOf(false) }
-                    var currentPosition by remember { mutableStateOf(0L) }
-                    var duration by remember { mutableStateOf(0L) }
-
-                    LaunchedEffect(Unit) {
-                        while (true) {
-                            isPlaying = musicPlayerController.isPlaying()
-                            currentPosition = musicPlayerController.getCurrentPosition()
-                            duration = musicPlayerController.getDuration()
-                            delay(100) // Update every 100ms
-                        }
-                    }
-
-                    MusicPlayerUI(
-                        isPlaying = isPlaying,
-                        currentPosition = currentPosition,
-                        duration = duration,
-                        onPlayPauseClick = {
-                            if (isPlaying) musicPlayerController.pause() else musicPlayerController.play()
-                        },
-                        onSeek = { newPosition ->
-                            musicPlayerController.seekTo(newPosition)
-                        }
-                    )
+                    MusicAppNavHost(context = this)
                 }
             }
         }
     }
+}
 
-    override fun onDestroy() {
-        super.onDestroy()
-        musicPlayerController.release()
+@Composable
+fun MusicAppNavHost(context: Context) {
+    val navController = rememberNavController()
+    val musicPlayerController = remember { MusicPlayerController(context) }
+
+    NavHost(navController = navController, startDestination = "playlists") {
+        composable("playlists") {
+            PlaylistPage { playlistId ->
+                navController.navigate("songs/$playlistId")
+            }
+        }
+        composable(
+            "songs/{playlistId}",
+            arguments = listOf(navArgument("playlistId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val playlistId = backStackEntry.arguments?.getInt("playlistId") ?: 0
+            SongsPage(
+                playlistId = playlistId,
+                onSongClick = { songName ->
+                    navController.navigate("player/$songName")
+                }
+            )
+        }
+        composable(
+            "player/{songName}",
+            arguments = listOf(navArgument("songName") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val songName = backStackEntry.arguments?.getString("songName") ?: ""
+
+            var isPlaying by remember { mutableStateOf(false) }
+            var currentPosition by remember { mutableStateOf(0L) }
+            var duration by remember { mutableStateOf(0L) }
+
+            LaunchedEffect(songName) {
+                try {
+                    musicPlayerController.setMediaItem("https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
+                    musicPlayerController.prepare()
+                    musicPlayerController.play()
+                } catch (e: Exception) {
+                    Log.e("MusicPlayerActivity", "Error setting up media: ${e.message}", e)
+                }
+
+                while (true) {
+                    isPlaying = musicPlayerController.isPlaying()
+                    currentPosition = musicPlayerController.getCurrentPosition()
+                    duration = musicPlayerController.getDuration()
+                    delay(100) // Update every 100ms
+                }
+            }
+
+            MusicPlayerUI(
+                songName = songName,
+                isPlaying = isPlaying,
+                currentPosition = currentPosition,
+                duration = duration,
+                onPlayPauseClick = {
+                    if (isPlaying) musicPlayerController.pause() else musicPlayerController.play()
+                },
+                onSeek = { newPosition ->
+                    musicPlayerController.seekTo(newPosition)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun PlaylistPage(onPlaylistClick: (Int) -> Unit) {
+    val playlists = listOf("Playlist 1", "Playlist 2", "Playlist 3") // Example playlists
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Your Playlists",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        LazyColumn {
+            items(playlists) { playlist ->
+                PlaylistItem(name = playlist) {
+                    onPlaylistClick(playlists.indexOf(playlist))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PlaylistItem(name: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Text(
+            text = name,
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}
+
+@Composable
+fun SongsPage(playlistId: Int, onSongClick: (String) -> Unit) {
+    val songs = listOf("Song 1", "Song 2", "Song 3") // Example songs
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Playlist $playlistId Songs",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        LazyColumn {
+            items(songs) { song ->
+                SongItem(name = song) {
+                    onSongClick(song)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SongItem(name: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Text(
+            text = name,
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodyLarge
+        )
     }
 }
 
 @Composable
 fun MusicPlayerUI(
+    songName: String,
     isPlaying: Boolean,
     currentPosition: Long,
     duration: Long,
@@ -158,7 +275,7 @@ fun MusicPlayerUI(
             )
             Spacer(modifier = Modifier.height(5.dp))
             Text(
-                text = "Sample Track",
+                text = songName,
                 color = Color.White,
                 fontSize = 24.sp,
                 textAlign = TextAlign.Center,
@@ -257,6 +374,7 @@ fun formatTime(timeMs: Long): String {
 fun PreviewMusicPlayerUI() {
     MusicAppTheme {
         MusicPlayerUI(
+            songName = "Sample Song",
             isPlaying = false,
             currentPosition = 60000L,
             duration = 180000L,
