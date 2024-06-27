@@ -1,5 +1,7 @@
 package com.example.musicapp
 
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -15,6 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -36,47 +42,60 @@ import androidx.navigation.navArgument
 import com.example.musicapp.ui.theme.MusicAppTheme
 import kotlinx.coroutines.delay
 import java.util.Locale
-import android.content.Context
 
 class MusicPlayerController(private val context: Context) {
-    private val player: ExoPlayer = ExoPlayer.Builder(context).build()
+    private var player: ExoPlayer? = null
+
+    private fun ensurePlayerInitialized() {
+        if (player == null) {
+            player = ExoPlayer.Builder(context).build()
+        }
+    }
 
     fun setMediaItem(uri: String) {
+        ensurePlayerInitialized()
         val mediaItem = MediaItem.fromUri(uri)
-        player.setMediaItem(mediaItem)
-        player.repeatMode = Player.REPEAT_MODE_OFF
+        player?.setMediaItem(mediaItem)
+        player?.repeatMode = Player.REPEAT_MODE_OFF
     }
 
     fun prepare() {
-        player.prepare()
+        player?.prepare()
     }
 
     fun seekTo(position: Long) {
-        player.seekTo(position)
+        player?.seekTo(position)
     }
 
     fun play() {
-        player.play()
+        player?.play()
     }
 
     fun pause() {
-        player.pause()
+        player?.pause()
     }
 
     fun release() {
-        player.release()
+        player?.release()
+        player = null
     }
 
-    fun getCurrentPosition(): Long {
-        return player.currentPosition
-    }
+    fun getCurrentPosition(): Long = player?.currentPosition ?: 0L
 
-    fun getDuration(): Long {
-        return player.duration
-    }
+    fun getDuration(): Long = player?.duration ?: 0L
 
-    fun isPlaying(): Boolean {
-        return player.isPlaying
+    fun isPlaying(): Boolean = player?.isPlaying ?: false
+}
+
+data class Song(val id: Int, val name: String, val url: String)
+
+class SharedViewModel : ViewModel() {
+    private val _playlist = mutableStateListOf<Song>()
+    val playlist: List<Song> = _playlist
+
+    fun setPlaylist(songs: List<Song>) {
+        _playlist.clear()
+        _playlist.addAll(songs)
     }
 }
 
@@ -85,12 +104,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+            val sharedViewModel: SharedViewModel = viewModel()
             MusicAppTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MusicAppNavHost(context = this)
+                    MusicAppNavHost(context = this, sharedViewModel = sharedViewModel)
                 }
             }
         }
@@ -98,7 +118,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MusicAppNavHost(context: Context) {
+fun MusicAppNavHost(context: Context, sharedViewModel: SharedViewModel) {
     val navController = rememberNavController()
     val musicPlayerController = remember { MusicPlayerController(context) }
 
@@ -115,50 +135,41 @@ fun MusicAppNavHost(context: Context) {
             val playlistId = backStackEntry.arguments?.getInt("playlistId") ?: 0
             SongsPage(
                 playlistId = playlistId,
-                onSongClick = { songName ->
-                    navController.navigate("player/$songName")
-                }
+                onSongClick = { song ->
+                    navController.navigate("player/${song.id}")
+                },
+                sharedViewModel = sharedViewModel
             )
         }
         composable(
-            "player/{songName}",
-            arguments = listOf(navArgument("songName") { type = NavType.StringType })
+            "player/{songId}",
+            arguments = listOf(navArgument("songId") { type = NavType.IntType })
         ) { backStackEntry ->
-            val songName = backStackEntry.arguments?.getString("songName") ?: ""
+            val songId = backStackEntry.arguments?.getInt("songId") ?: 0
+            val currentSong = sharedViewModel.playlist.find { it.id == songId }
 
-            var isPlaying by remember { mutableStateOf(false) }
-            var currentPosition by remember { mutableStateOf(0L) }
-            var duration by remember { mutableStateOf(0L) }
+            if (currentSong != null) {
+                val currentIndex = sharedViewModel.playlist.indexOf(currentSong)
 
-            LaunchedEffect(songName) {
-                try {
-                    musicPlayerController.setMediaItem("https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
-                    musicPlayerController.prepare()
-                    musicPlayerController.play()
-                } catch (e: Exception) {
-                    Log.e("MusicPlayerActivity", "Error setting up media: ${e.message}", e)
-                }
-
-                while (true) {
-                    isPlaying = musicPlayerController.isPlaying()
-                    currentPosition = musicPlayerController.getCurrentPosition()
-                    duration = musicPlayerController.getDuration()
-                    delay(100) // Update every 100ms
-                }
+                MusicPlayerScreen(
+                    song = currentSong,
+                    currentIndex = currentIndex,
+                    playlistSize = sharedViewModel.playlist.size,
+                    musicPlayerController = musicPlayerController,
+                    onNextSong = {
+                        val nextIndex = (currentIndex + 1) % sharedViewModel.playlist.size
+                        val nextSong = sharedViewModel.playlist[nextIndex]
+                        navController.navigate("player/${nextSong.id}")
+                    },
+                    onPreviousSong = {
+                        val previousIndex = (currentIndex - 1 + sharedViewModel.playlist.size) % sharedViewModel.playlist.size
+                        val previousSong = sharedViewModel.playlist[previousIndex]
+                        navController.navigate("player/${previousSong.id}")
+                    }
+                )
+            } else {
+                Text("Song not found")
             }
-
-            MusicPlayerUI(
-                songName = songName,
-                isPlaying = isPlaying,
-                currentPosition = currentPosition,
-                duration = duration,
-                onPlayPauseClick = {
-                    if (isPlaying) musicPlayerController.pause() else musicPlayerController.play()
-                },
-                onSeek = { newPosition ->
-                    musicPlayerController.seekTo(newPosition)
-                }
-            )
         }
     }
 }
@@ -205,8 +216,17 @@ fun PlaylistItem(name: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun SongsPage(playlistId: Int, onSongClick: (String) -> Unit) {
-    val songs = listOf("Song 1", "Song 2", "Song 3") // Example songs
+fun SongsPage(playlistId: Int, onSongClick: (Song) -> Unit, sharedViewModel: SharedViewModel) {
+    val songs = listOf(
+        Song(1, "Song 1", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"),
+        Song(2, "Song 2", "https://cdn.bitmovin.com/content/assets/sintel/hls/playlist.m3u8"),
+        Song(3, "Song 3", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
+    )
+
+    // Set the playlist in the SharedViewModel
+    LaunchedEffect(songs) {
+        sharedViewModel.setPlaylist(songs)
+    }
 
     Column(
         modifier = Modifier
@@ -220,7 +240,7 @@ fun SongsPage(playlistId: Int, onSongClick: (String) -> Unit) {
         )
         LazyColumn {
             items(songs) { song ->
-                SongItem(name = song) {
+                SongItem(song = song) {
                     onSongClick(song)
                 }
             }
@@ -229,7 +249,7 @@ fun SongsPage(playlistId: Int, onSongClick: (String) -> Unit) {
 }
 
 @Composable
-fun SongItem(name: String, onClick: () -> Unit) {
+fun SongItem(song: Song, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -238,11 +258,66 @@ fun SongItem(name: String, onClick: () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Text(
-            text = name,
+            text = song.name,
             modifier = Modifier.padding(16.dp),
             style = MaterialTheme.typography.bodyLarge
         )
     }
+}
+
+@Composable
+fun MusicPlayerScreen(
+    song: Song,
+    currentIndex: Int,
+    playlistSize: Int,
+    musicPlayerController: MusicPlayerController,
+    onNextSong: () -> Unit,
+    onPreviousSong: () -> Unit
+) {
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableStateOf(0L) }
+    var duration by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(song.url) {
+        musicPlayerController.release() // Release the previous player
+        try {
+            musicPlayerController.setMediaItem(song.url)
+            musicPlayerController.prepare()
+            musicPlayerController.play()
+        } catch (e: Exception) {
+            Log.e("MusicPlayerUI", "Error setting up media: ${e.message}", e)
+        }
+
+        while (true) {
+            isPlaying = musicPlayerController.isPlaying()
+            currentPosition = musicPlayerController.getCurrentPosition()
+            duration = musicPlayerController.getDuration()
+            delay(100)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            musicPlayerController.release()
+        }
+    }
+
+    MusicPlayerUI(
+        songName = song.name,
+        isPlaying = isPlaying,
+        currentPosition = currentPosition,
+        duration = duration,
+        currentIndex = currentIndex,
+        playlistSize = playlistSize,
+        onPlayPauseClick = {
+            if (isPlaying) musicPlayerController.pause() else musicPlayerController.play()
+        },
+        onSeek = { newPosition ->
+            musicPlayerController.seekTo(newPosition)
+        },
+        onNextSong = onNextSong,
+        onPreviousSong = onPreviousSong
+    )
 }
 
 @Composable
@@ -251,8 +326,12 @@ fun MusicPlayerUI(
     isPlaying: Boolean,
     currentPosition: Long,
     duration: Long,
+    currentIndex: Int,
+    playlistSize: Int,
     onPlayPauseClick: () -> Unit,
-    onSeek: (Long) -> Unit
+    onSeek: (Long) -> Unit,
+    onNextSong: () -> Unit,
+    onPreviousSong: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -281,6 +360,13 @@ fun MusicPlayerUI(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(16.dp)
             )
+            Text(
+                text = "Song ${currentIndex + 1} of $playlistSize",
+                color = Color.White,
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(8.dp)
+            )
             Spacer(modifier = Modifier.weight(1f))
             Column(
                 modifier = Modifier
@@ -294,7 +380,26 @@ fun MusicPlayerUI(
                     onSeek = onSeek
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                PlayPauseButton(isPlaying, onPlayPauseClick)
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    IconButton(onClick = onPreviousSong) {
+                        Icon(
+                            Icons.Default.SkipPrevious,
+                            contentDescription = "Previous",
+                            tint = Color.White
+                        )
+                    }
+                    PlayPauseButton(isPlaying, onPlayPauseClick)
+                    IconButton(onClick = onNextSong) {
+                        Icon(
+                            Icons.Default.SkipNext,
+                            contentDescription = "Next",
+                            tint = Color.White
+                        )
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(40.dp))
         }
@@ -309,13 +414,13 @@ fun PlayPauseButton(isPlaying: Boolean, onPlayPauseClick: () -> Unit) {
             containerColor = Color.Red,
             contentColor = Color.Black,
             modifier = Modifier
-                .size(75.dp)
+                .size(90.dp)
                 .padding(16.dp)
         ) {
             if (playing) {
-                Icon(Icons.Filled.Pause, contentDescription = "Pause")
+                Icon(Icons.Filled.Pause, contentDescription = "Pause", modifier = Modifier.size(45.dp))
             } else {
-                Icon(Icons.Filled.PlayArrow, contentDescription = "Play")
+                Icon(Icons.Filled.PlayArrow, contentDescription = "Play", modifier = Modifier.size(45.dp))
             }
         }
     }
@@ -378,8 +483,12 @@ fun PreviewMusicPlayerUI() {
             isPlaying = false,
             currentPosition = 60000L,
             duration = 180000L,
+            currentIndex = 0,
+            playlistSize = 5,
             onPlayPauseClick = { },
-            onSeek = { }
+            onSeek = { },
+            onNextSong = { },
+            onPreviousSong = { }
         )
     }
 }
