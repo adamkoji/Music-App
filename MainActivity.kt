@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.modifier.modifierLocalMapOf
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -68,6 +69,7 @@ class MusicPlayerController(private val context: Context) {
     }
 
     fun play() {
+        Log.d("MusicPlayerController", "${player == null} play")
         player?.play()
     }
 
@@ -147,9 +149,11 @@ fun MusicAppNavHost(context: Context, sharedViewModel: SharedViewModel) {
         ) { backStackEntry ->
             val songId = backStackEntry.arguments?.getInt("songId") ?: 0
             val currentSong = sharedViewModel.playlist.find { it.id == songId }
+            println("current song log $currentSong")
 
             if (currentSong != null) {
                 val currentIndex = sharedViewModel.playlist.indexOf(currentSong)
+                println("current song log $currentIndex")
 
                 MusicPlayerScreen(
                     song = currentSong,
@@ -219,7 +223,7 @@ fun PlaylistItem(name: String, onClick: () -> Unit) {
 fun SongsPage(playlistId: Int, onSongClick: (Song) -> Unit, sharedViewModel: SharedViewModel) {
     val songs = listOf(
         Song(1, "Song 1", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"),
-        Song(2, "Song 2", "https://cdn.bitmovin.com/content/assets/sintel/hls/playlist.m3u8"),
+        Song(2, "Song 2", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"),
         Song(3, "Song 3", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
     )
 
@@ -264,7 +268,6 @@ fun SongItem(song: Song, onClick: () -> Unit) {
         )
     }
 }
-
 @Composable
 fun MusicPlayerScreen(
     song: Song,
@@ -278,29 +281,45 @@ fun MusicPlayerScreen(
     var currentPosition by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(0L) }
 
-    LaunchedEffect(song.url) {
-        musicPlayerController.release() // Release the previous player
+    val songId = song.id
+
+
+    LaunchedEffect(songId) {
+        println("song id on Music player screen $songId")
+
+        musicPlayerController.release()
         try {
+            Log.d("MusicPlayerScreen", "Setting up media item for song: ${song.name}")
             musicPlayerController.setMediaItem(song.url)
             musicPlayerController.prepare()
             musicPlayerController.play()
+
+            delay(100)
         } catch (e: Exception) {
-            Log.e("MusicPlayerUI", "Error setting up media: ${e.message}", e)
+            Log.e("MusicPlayerScreen", "Error setting up media: ${e.message}", e)
         }
 
         while (true) {
+
             isPlaying = musicPlayerController.isPlaying()
+//            if (!isPlaying) {
+//                Log.e("MusicPlayerScreen", "within if block ${song.name}")
+//
+//                musicPlayerController.play()
+//                delay(100)
+//            }
             currentPosition = musicPlayerController.getCurrentPosition()
             duration = musicPlayerController.getDuration()
             delay(100)
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            musicPlayerController.release()
-        }
-    }
+//    DisposableEffect(Unit) {
+//        onDispose {
+//            Log.d("MusicPlayerScreen", "Disposing MusicPlayerController")
+//            musicPlayerController.release()
+//        }
+//    }
 
     MusicPlayerUI(
         songName = song.name,
@@ -315,8 +334,14 @@ fun MusicPlayerScreen(
         onSeek = { newPosition ->
             musicPlayerController.seekTo(newPosition)
         },
-        onNextSong = onNextSong,
-        onPreviousSong = onPreviousSong
+        onNextSong = {
+            Log.d("MusicPlayerScreen", "Next song clicked")
+            onNextSong()
+        },
+        onPreviousSong = {
+            Log.d("MusicPlayerScreen", "Previous song clicked")
+            onPreviousSong()
+        }
     )
 }
 
@@ -473,6 +498,7 @@ fun formatTime(timeMs: Long): String {
     val seconds = totalSeconds % 60
     return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
 }
+
 
 @Preview(showBackground = true)
 @Composable
