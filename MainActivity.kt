@@ -19,6 +19,9 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.ArrowBackIosNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -118,11 +121,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
 @Composable
 fun MusicAppNavHost(context: Context, sharedViewModel: SharedViewModel) {
     val navController = rememberNavController()
     val musicPlayerController = remember { MusicPlayerController(context) }
+    var currentPlaylistId by remember { mutableStateOf(0) }
 
     NavHost(navController = navController, startDestination = "playlists") {
         composable("playlists") {
@@ -135,6 +138,7 @@ fun MusicAppNavHost(context: Context, sharedViewModel: SharedViewModel) {
             arguments = listOf(navArgument("playlistId") { type = NavType.IntType })
         ) { backStackEntry ->
             val playlistId = backStackEntry.arguments?.getInt("playlistId") ?: 0
+            currentPlaylistId = playlistId  // Store the current playlist ID
             SongsPage(
                 playlistId = playlistId,
                 onSongClick = { song ->
@@ -143,17 +147,18 @@ fun MusicAppNavHost(context: Context, sharedViewModel: SharedViewModel) {
                 sharedViewModel = sharedViewModel
             )
         }
+
         composable(
             "player/{songId}",
             arguments = listOf(navArgument("songId") { type = NavType.IntType })
         ) { backStackEntry ->
             val songId = backStackEntry.arguments?.getInt("songId") ?: 0
             val currentSong = sharedViewModel.playlist.find { it.id == songId }
-            println("current song log $currentSong")
+            Log.d("NavHost", "Navigating to player for song ID: $songId")
 
             if (currentSong != null) {
                 val currentIndex = sharedViewModel.playlist.indexOf(currentSong)
-                println("current song log $currentIndex")
+                Log.d("NavHost", "Current song index: $currentIndex")
 
                 MusicPlayerScreen(
                     song = currentSong,
@@ -163,12 +168,21 @@ fun MusicAppNavHost(context: Context, sharedViewModel: SharedViewModel) {
                     onNextSong = {
                         val nextIndex = (currentIndex + 1) % sharedViewModel.playlist.size
                         val nextSong = sharedViewModel.playlist[nextIndex]
+                        Log.d("NavHost", "Navigating to next song: ${nextSong.id}")
                         navController.navigate("player/${nextSong.id}")
                     },
                     onPreviousSong = {
                         val previousIndex = (currentIndex - 1 + sharedViewModel.playlist.size) % sharedViewModel.playlist.size
                         val previousSong = sharedViewModel.playlist[previousIndex]
+                        Log.d("NavHost", "Navigating to previous song: ${previousSong.id}")
                         navController.navigate("player/${previousSong.id}")
+                    },
+                    onBackPress = {
+                        // Navigate back to the songs page with the current playlist ID
+                        navController.navigate("songs/$currentPlaylistId") {
+                            // Pop up to the songs page, removing all player pages from the back stack
+                            popUpTo("songs/$currentPlaylistId") { inclusive = false }
+                        }
                     }
                 )
             } else {
@@ -275,7 +289,8 @@ fun MusicPlayerScreen(
     playlistSize: Int,
     musicPlayerController: MusicPlayerController,
     onNextSong: () -> Unit,
-    onPreviousSong: () -> Unit
+    onPreviousSong: () -> Unit,
+    onBackPress: () -> Unit
 ) {
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableStateOf(0L) }
@@ -313,6 +328,9 @@ fun MusicPlayerScreen(
             delay(100)
         }
     }
+    BackHandler {
+        onBackPress()
+    }
 
 //    DisposableEffect(Unit) {
 //        onDispose {
@@ -326,6 +344,7 @@ fun MusicPlayerScreen(
         isPlaying = isPlaying,
         currentPosition = currentPosition,
         duration = duration,
+        onBackPress = onBackPress,
         currentIndex = currentIndex,
         playlistSize = playlistSize,
         onPlayPauseClick = {
@@ -356,20 +375,42 @@ fun MusicPlayerUI(
     onPlayPauseClick: () -> Unit,
     onSeek: (Long) -> Unit,
     onNextSong: () -> Unit,
-    onPreviousSong: () -> Unit
+    onPreviousSong: () -> Unit,
+    onBackPress: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xE6000000)),
         contentAlignment = Alignment.Center
-    ) {
+    )
+    {
+        IconButton(
+            onClick = onBackPress,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.ArrowBackIosNew,
+                contentDescription = "Back",
+                tint = Color.White
+            )
+        }
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Spacer(modifier = Modifier.height(100.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "Now Playing",
+                color = Color.Gray,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(16.dp)
+            )
+            Spacer(modifier = Modifier.height(60.dp))
             Image(
                 painter = painterResource(id = R.drawable.img_8),
                 contentDescription = null,
@@ -406,14 +447,16 @@ fun MusicPlayerUI(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Absolute.SpaceBetween,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     IconButton(onClick = onPreviousSong) {
                         Icon(
                             Icons.Default.SkipPrevious,
                             contentDescription = "Previous",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(80.dp).padding(0.dp)
                         )
                     }
                     PlayPauseButton(isPlaying, onPlayPauseClick)
@@ -421,7 +464,8 @@ fun MusicPlayerUI(
                         Icon(
                             Icons.Default.SkipNext,
                             contentDescription = "Next",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(80.dp)
                         )
                     }
                 }
@@ -436,16 +480,16 @@ fun PlayPauseButton(isPlaying: Boolean, onPlayPauseClick: () -> Unit) {
     Crossfade(targetState = isPlaying, animationSpec = tween(durationMillis = 300)) { playing ->
         FloatingActionButton(
             onClick = onPlayPauseClick,
-            containerColor = Color.Red,
+            containerColor = Color(0xFFFFCDD2),
             contentColor = Color.Black,
             modifier = Modifier
                 .size(90.dp)
-                .padding(16.dp)
+                .padding(12.dp)
         ) {
             if (playing) {
-                Icon(Icons.Filled.Pause, contentDescription = "Pause", modifier = Modifier.size(45.dp))
+                Icon(Icons.Filled.Pause, contentDescription = "Pause", modifier = Modifier.size(60.dp))
             } else {
-                Icon(Icons.Filled.PlayArrow, contentDescription = "Play", modifier = Modifier.size(45.dp))
+                Icon(Icons.Filled.PlayArrow, contentDescription = "Play", modifier = Modifier.size(60.dp))
             }
         }
     }
@@ -460,18 +504,18 @@ fun SeekBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 2.dp),
+        horizontalAlignment = Alignment.Start
     ) {
         Text(
             text = buildString {
                 append(formatTime(currentPosition))
-                append(" / ")
+                append("                                                     ")
                 append(formatTime(duration.coerceAtLeast(1)))
             },
             color = Color.White,
             fontSize = 16.sp,
-            textAlign = TextAlign.Center,
+            textAlign = TextAlign.Start,
             modifier = Modifier.padding(bottom = 8.dp)
         )
         Slider(
@@ -481,7 +525,7 @@ fun SeekBar(
             },
             valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
             colors = SliderDefaults.colors(
-                thumbColor = Color.Red,
+                thumbColor = Color.White,
                 activeTrackColor = Color.Red,
                 inactiveTrackColor = Color.Gray
             ),
@@ -514,7 +558,9 @@ fun PreviewMusicPlayerUI() {
             onPlayPauseClick = { },
             onSeek = { },
             onNextSong = { },
-            onPreviousSong = { }
+            onPreviousSong = { },
+            onBackPress = { }
         )
     }
 }
+Music Player App - Song Playback Issue - Claude
