@@ -876,7 +876,7 @@ fun MusicPlayerUI(
             onClick = onBackPress,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(16.dp)
+                .padding(8.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.ArrowBackIosNew,
@@ -889,8 +889,19 @@ fun MusicPlayerUI(
             Row(
                 modifier = Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically
+
             ) {
-                Column {
+                Column (
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ){
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Now Playing",
+                        color = Color.Gray,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(0.dp))
                 Image(
                     painter = painterResource(id = songImageRes),
                     contentDescription = null,
@@ -946,13 +957,6 @@ fun MusicPlayerUI(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Spacer(modifier = Modifier.height(450.dp))
-                Text(
-                    text = "Song ${currentIndex + 1} of $playlistSize",
-                    color = Color.Gray,
-                    fontSize = 20.sp,
-                    textAlign = TextAlign.Start
-                )
                 PlayerContent(
                     songName = songName,
                     currentIndex = currentIndex,
@@ -988,14 +992,20 @@ fun PlayerContent(
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
-        horizontalAlignment = Alignment.Start,
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom
     ) {
-        Spacer(modifier = Modifier.height(0.dp))
+        Text(
+            text = "Song ${currentIndex + 1} of $playlistSize",
+            color = Color.Gray,
+            fontSize = 22.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(100.dp))
         Text(
             text = songName,
             color = Color.White,
-            fontSize = 22.sp,
+            fontSize = 20.sp,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(10.dp))
@@ -1082,10 +1092,10 @@ fun SeekBar(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp)
+                .padding(vertical = 6.dp)
         )
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
